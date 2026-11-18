@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: ecr-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   AWS_REGION: us-east-1
@@ -67,11 +67,20 @@ jobs:
           name: tested-image
       - name: Load tested image
         run: docker load -i image.tar
+      - name: Check OIDC identity
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+            core.info(`OIDC subject: ${claims.sub}`);
+            core.info(`OIDC audience: ${claims.aud}`);
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-${{ github.run_id }}
+          retry-max-attempts: 3
       - name: Authenticate to ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
