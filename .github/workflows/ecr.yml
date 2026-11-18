@@ -1,0 +1,97 @@
+name: Build and publish to ECR
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ecr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: tarea3-app
+  AWS_ROLE_ARN: arn:aws:iam::511661663349:role/tarea3-github-ecr-push
+
+jobs:
+  build:
+    name: Build and test Nginx
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build Linux AMD64 image
+        run: docker build --platform linux/amd64 -t tarea3-app:test ./app
+      - name: Verify Nginx and HTTP response
+        run: |
+          set -euo pipefail
+          docker run --rm tarea3-app:test nginx -t
+          docker run -d --name app-test -p 127.0.0.1:8080:80 tarea3-app:test
+          trap 'docker rm -f app-test' EXIT
+          curl --fail --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:8080/ -o response.html
+          grep -q 'Bienvenido a Nginx' response.html
+      - name: Export tested image
+        run: docker save tarea3-app:test -o image.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tested-image
+          path: image.tar
+          retention-days: 1
+
+  publish:
+    name: Publish tested image
+    needs: build
+    # Forks and Dependabot run the build only, without AWS credentials.
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-image
+      - name: Load tested image
+        run: docker load -i image.tar
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-${{ github.run_id }}
+      - name: Authenticate to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Push image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          repository="$REGISTRY/$ECR_REPOSITORY"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            tag="pr-${PR_NUMBER}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          else
+            tag="main-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          docker tag tarea3-app:test "$repository:$tag"
+          docker push "$repository:$tag"
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            docker tag tarea3-app:test "$repository:latest"
+            docker push "$repository:latest"
+          fi
+          echo "Published: \`$repository:$tag\`" >> "$GITHUB_STEP_SUMMARY"
