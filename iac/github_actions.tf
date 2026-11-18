@@ -23,8 +23,8 @@ resource "aws_iam_role" "github_ecr_push" {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           "token.actions.githubusercontent.com:sub" = [
-            "repo:TheMike69/Tarea-3:ref:refs/heads/main",
-            "repo:TheMike69/Tarea-3:pull_request",
+            "repo:TheMike69@184404042/Tarea-3@1463395721:ref:refs/heads/main",
+            "repo:TheMike69@184404042/Tarea-3@1463395721:pull_request",
           ]
         }
       }

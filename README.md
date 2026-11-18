@@ -15,7 +15,7 @@ Cada push a `main` y cada PR dirigido a `main` construye una imagen Linux AMD64 
 - PR de forks o Dependabot: construye y prueba, pero no recibe credenciales AWS ni publica.
 - Ejecución manual: disponible desde Actions; publica únicamente desde `main`.
 
-La autenticación usa OIDC: no requiere guardar claves de acceso AWS en GitHub. El ARN del rol y el número de cuenta en el workflow son identificadores, no contraseñas. El rol solo tiene permisos de publicación sobre `tarea3-app`.
+La autenticación usa OIDC: no requiere guardar claves de acceso AWS en GitHub. La confianza incluye los IDs inmutables del propietario y del repositorio, conforme al identificador emitido por GitHub para este proyecto. El ARN del rol y el número de cuenta en el workflow son identificadores, no contraseñas. El rol solo tiene permisos de publicación sobre `tarea3-app`.
 
 La política de ECR conserva las dos imágenes más recientes en total, incluidas las de PR; varias publicaciones de PR pueden hacer que una imagen anterior con `latest` expire. La limpieza es asíncrona. Publicar una imagen no actualiza automáticamente las tareas ECS: para eso se requiere un nuevo despliegue del servicio.
 
